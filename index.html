@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DNB Incident Hub</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0c0f14; --surface: #141820; --surface2: #1c2230;
+    --border: #252d3d; --border2: #2e3a50;
+    --text: #e8edf5; --muted: #6b7a96;
+    --accent: #2563eb; --accent-dim: #1e4fc2;
+    --green: #10b981; --yellow: #f59e0b; --red: #ef4444;
+    --mono: 'DM Mono', monospace; --sans: 'DM Sans', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; min-height: 100vh; }
+
+  .shell { display: grid; grid-template-columns: 240px 1fr; grid-template-rows: 52px 1fr; min-height: 100vh; }
+  @media (max-width: 768px) {
+    .shell { grid-template-columns: 1fr; }
+    .sidebar { display: none; position: fixed; top: 52px; left: 0; bottom: 0; z-index: 100; width: 240px; }
+    .sidebar.open { display: flex; }
+  }
+
+  .topbar { grid-column: 1/-1; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 16px; position: sticky; top: 0; z-index: 50; }
+  .logo { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; letter-spacing: -0.02em; }
+  .logo-mark { width: 26px; height: 26px; background: var(--accent); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; font-family: var(--mono); }
+  .topbar-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+  .topbar-title { font-size: 13px; color: var(--muted); }
+  .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); transition: all 0.3s; }
+  .sync-dot.syncing { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); animation: pulse 1s infinite; }
+  .sync-dot.error { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+  .btn-new { background: var(--accent); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: var(--sans); display: flex; align-items: center; gap: 6px; transition: background .15s; }
+  .btn-new:hover { background: var(--accent-dim); }
+  .hamburger { display: none; background: none; border: none; cursor: pointer; color: var(--muted); font-size: 20px; padding: 4px; }
+  @media (max-width: 768px) { .hamburger { display: block; } }
+
+  .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 16px 0; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+  .nav-section { padding: 4px 16px 2px; font-size: 10px; font-family: var(--mono); color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-top: 12px; }
+  .nav-section:first-child { margin-top: 0; }
+  .nav-item { display: flex; align-items: center; gap: 9px; padding: 7px 16px; cursor: pointer; color: var(--muted); font-size: 13.5px; border: none; background: none; width: 100%; text-align: left; font-family: var(--sans); transition: color .1s, background .1s; }
+  .nav-item:hover { color: var(--text); background: var(--surface2); }
+  .nav-item.active { color: var(--text); background: rgba(37,99,235,.12); border-right: 2px solid var(--accent); }
+  .nav-icon { font-size: 15px; width: 18px; text-align: center; }
+  .nav-badge { margin-left: auto; background: var(--accent); color: #fff; font-size: 10px; font-family: var(--mono); padding: 1px 6px; border-radius: 10px; min-width: 20px; text-align: center; }
+
+  .main { overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 24px; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+  @media (max-width: 900px) { .stats-row { grid-template-columns: repeat(2,1fr); } }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .stat-label { font-size: 11px; font-family: var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+  .stat-value { font-size: 28px; font-weight: 600; font-family: var(--mono); letter-spacing: -.03em; line-height: 1; }
+  .stat-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .panel-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; }
+  .panel-title { font-size: 13px; font-weight: 600; }
+  .panel-count { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+
+  .incident-table { width: 100%; border-collapse: collapse; }
+  .incident-table th { padding: 10px 18px; font-size: 10.5px; font-family: var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; text-align: left; border-bottom: 1px solid var(--border); background: var(--bg); }
+  .incident-table td { padding: 12px 18px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .incident-table tr:last-child td { border-bottom: none; }
+  .incident-table tr:hover td { background: var(--surface2); cursor: pointer; }
+
+  .badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-family: var(--mono); font-weight: 500; }
+  .badge-open { background: rgba(37,99,235,.15); color: #60a5fa; border: 1px solid rgba(37,99,235,.25); }
+  .badge-progress { background: rgba(245,158,11,.12); color: #fbbf24; border: 1px solid rgba(245,158,11,.25); }
+  .badge-closed { background: rgba(16,185,129,.1); color: #34d399; border: 1px solid rgba(16,185,129,.2); }
+  .badge-escalated { background: rgba(239,68,68,.12); color: #f87171; border: 1px solid rgba(239,68,68,.25); }
+
+  .sev { display: inline-block; width: 20px; height: 20px; border-radius: 5px; font-size: 10px; font-family: var(--mono); font-weight: 700; text-align: center; line-height: 20px; }
+  .sev-1 { background: rgba(239,68,68,.2); color: #f87171; }
+  .sev-2 { background: rgba(245,158,11,.15); color: #fbbf24; }
+  .sev-3 { background: rgba(37,99,235,.15); color: #60a5fa; }
+
+  .incident-id { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .incident-title { font-size: 13.5px; font-weight: 500; }
+  .incident-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .avatar { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; font-size: 10px; font-weight: 700; font-family: var(--mono); flex-shrink: 0; background: rgba(37,99,235,.15); color: #60a5fa; }
+
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(2px); opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .overlay.show { opacity: 1; pointer-events: all; }
+  .modal { background: var(--surface); border: 1px solid var(--border2); border-radius: 14px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; transform: translateY(10px); transition: transform .2s; }
+  .overlay.show .modal { transform: translateY(0); }
+  .modal-header { padding: 18px 22px 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .modal-title { font-size: 16px; font-weight: 600; letter-spacing: -.02em; }
+  .modal-subtitle { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .modal-close { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 20px; line-height: 1; padding: 2px; flex-shrink: 0; }
+  .modal-close:hover { color: var(--text); }
+  .modal-body { padding: 18px 22px 22px; display: flex; flex-direction: column; gap: 16px; }
+
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 500px) { .form-row { grid-template-columns: 1fr; } }
+  label { font-size: 11.5px; font-family: var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  input, textarea, select { background: var(--bg); border: 1px solid var(--border2); border-radius: 7px; padding: 9px 12px; color: var(--text); font-family: var(--sans); font-size: 13.5px; outline: none; transition: border-color .15s; width: 100%; }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+  textarea { resize: vertical; min-height: 80px; }
+  select option { background: var(--surface2); }
+  .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+
+  .btn { padding: 8px 18px; border-radius: 7px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: var(--sans); border: 1px solid transparent; transition: all .15s; }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent-dim); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-ghost { background: transparent; color: var(--muted); border-color: var(--border2); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+  .btn-danger { background: rgba(239,68,68,.1); color: #f87171; border-color: rgba(239,68,68,.2); }
+  .btn-danger:hover { background: rgba(239,68,68,.2); }
+  .btn-success { background: rgba(16,185,129,.12); color: #34d399; border-color: rgba(16,185,129,.2); }
+  .btn-success:hover { background: rgba(16,185,129,.22); }
+
+  .detail-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; background: var(--bg); border-radius: 8px; padding: 14px; border: 1px solid var(--border); }
+  @media (max-width: 500px) { .detail-grid { grid-template-columns: 1fr 1fr; } }
+  .dil { font-size: 10.5px; font-family: var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .div { font-size: 13px; font-weight: 500; }
+  .detail-section { border-top: 1px solid var(--border); padding-top: 14px; }
+  .section-label { font-size: 12px; font-family: var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+
+  .timeline { display: flex; flex-direction: column; }
+  .tl-item { display: flex; gap: 12px; padding: 10px 0; position: relative; }
+  .tl-item:not(:last-child)::before { content: ''; position: absolute; left: 12px; top: 34px; bottom: -4px; width: 1px; background: var(--border); }
+  .tl-dot { width: 25px; height: 25px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border2); display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+  .tl-text { font-size: 13px; line-height: 1.4; }
+  .tl-time { font-size: 11px; font-family: var(--mono); color: var(--muted); margin-top: 2px; }
+
+  .action-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; }
+  .action-check { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--border2); background: none; cursor: pointer; flex-shrink: 0; margin-top: 1px; appearance: none; position: relative; transition: all .15s; }
+  .action-check:checked { background: var(--green); border-color: var(--green); }
+  .action-check:checked::after { content: '✓'; position: absolute; color: #fff; font-size: 10px; font-weight: 700; top: 50%; left: 50%; transform: translate(-50%,-50%); }
+  .action-due { font-size: 11px; font-family: var(--mono); color: var(--muted); }
+  .add-row { display: flex; gap: 8px; margin-top: 10px; }
+  .add-row input { flex: 1; }
+
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface); border: 1px solid var(--border2); border-radius: 9px; padding: 12px 18px; font-size: 13.5px; z-index: 999; transform: translateY(60px); opacity: 0; transition: all .25s; max-width: 300px; display: flex; align-items: center; gap: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  .loading { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 500; transition: opacity .4s; }
+  .loading.gone { opacity: 0; pointer-events: none; }
+  .spinner { width: 32px; height: 32px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .empty-state { padding: 48px 24px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="loading" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">Ansluter till databasen...</div>
+</div>
+
+<div class="shell">
+  <header class="topbar">
+    <button class="hamburger" onclick="toggleSidebar()">☰</button>
+    <div class="logo"><div class="logo-mark">IH</div> Incident Hub</div>
+    <div class="topbar-sep"></div>
+    <span class="topbar-title">DNB Finans — Kreditbordet</span>
+    <div class="topbar-right">
+      <div class="sync-dot syncing" id="sync-dot"></div>
+      <button class="btn-new" onclick="openNew()">+ Nytt ärende</button>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar">
+    <span class="nav-section">Vy</span>
+    <button class="nav-item active" onclick="setView('all',this)"><span class="nav-icon">◈</span> Alla ärenden <span class="nav-badge" id="badge-all">0</span></button>
+    <button class="nav-item" onclick="setView('open',this)"><span class="nav-icon">○</span> Öppna</button>
+    <button class="nav-item" onclick="setView('progress',this)"><span class="nav-icon">◑</span> Pågående</button>
+    <button class="nav-item" onclick="setView('escalated',this)"><span class="nav-icon">▲</span> Eskalerade</button>
+    <button class="nav-item" onclick="setView('closed',this)"><span class="nav-icon">●</span> Stängda</button>
+    <span class="nav-section">Kategori</span>
+    <button class="nav-item" onclick="setView('cat-AML',this)"><span class="nav-icon">⚑</span> AML / Regelefterlevnad</button>
+    <button class="nav-item" onclick="setView('cat-IT',this)"><span class="nav-icon">⌘</span> IT / System</button>
+    <button class="nav-item" onclick="setView('cat-Kredit',this)"><span class="nav-icon">⊞</span> Kredit</button>
+    <button class="nav-item" onclick="setView('cat-Övrigt',this)"><span class="nav-icon">◇</span> Övrigt</button>
+  </aside>
+
+  <main class="main">
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Totalt aktiva</div><div class="stat-value" style="color:#60a5fa" id="s-active">—</div><div class="stat-sub">Öppna + pågående</div></div>
+      <div class="stat-card"><div class="stat-label">Eskalerade</div><div class="stat-value" style="color:#f87171" id="s-esc">—</div><div class="stat-sub">Kräver åtgärd</div></div>
+      <div class="stat-card"><div class="stat-label">Stängda</div><div class="stat-value" style="color:#34d399" id="s-closed">—</div><div class="stat-sub">Totalt lösta</div></div>
+      <div class="stat-card"><div class="stat-label">Totalt</div><div class="stat-value" style="color:#fbbf24" id="s-total">—</div><div class="stat-sub">Alla ärenden</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Ärenden</span>
+        <span class="panel-count" id="panel-count">Laddar...</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="incident-table">
+          <thead><tr>
+            <th>ID / Allvarlighet</th><th>Beskrivning</th><th>Kategori</th><th>Status</th><th>Ansvarig</th><th>Skapad</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- NEW -->
+<div class="overlay" id="modal-new">
+  <div class="modal">
+    <div class="modal-header">
+      <div><div class="modal-title">Nytt ärende</div><div class="modal-subtitle">Logga en operativ händelse</div></div>
+      <button class="modal-close" onclick="close_('modal-new')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label>Ditt namn</label><input id="n-author" placeholder="Förnamn Efternamn..." /></div>
+      <div class="form-group"><label>Rubrik</label><input id="n-title" placeholder="Kort beskrivning..." /></div>
+      <div class="form-row">
+        <div class="form-group"><label>Kategori</label>
+          <select id="n-cat"><option>AML</option><option>IT</option><option>Kredit</option><option>Övrigt</option></select>
+        </div>
+        <div class="form-group"><label>Allvarlighet</label>
+          <select id="n-sev"><option value="1">S1 — Kritisk</option><option value="2" selected>S2 — Hög</option><option value="3">S3 — Normal</option></select>
+        </div>
+      </div>
+      <div class="form-group"><label>Beskrivning</label><textarea id="n-desc" placeholder="Vad hände, när, påverkan..."></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Delegera till</label><input id="n-assignee" placeholder="Namn på kollega..." /></div>
+        <div class="form-group"><label>Uppföljningsdatum</label><input type="date" id="n-followup" /></div>
+      </div>
+      <div class="form-group"><label>Åtgärdspunkt (valfri)</label><input id="n-action" placeholder="T.ex. Kontakta support..." /></div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="close_('modal-new')">Avbryt</button>
+        <button class="btn btn-primary" id="btn-create" onclick="createIncident()">Skapa ärende</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DETAIL -->
+<div class="overlay" id="modal-detail">
+  <div class="modal">
+    <div class="modal-header">
+      <div><div class="modal-title" id="d-title"></div><div class="modal-subtitle" id="d-meta"></div></div>
+      <button class="modal-close" onclick="close_('modal-detail')">×</button>
+    </div>
+    <div class="modal-body" id="d-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="t-icon"></span><span id="t-msg"></span></div>
+
+<script>
+const URL_ = 'https://acsliccpsweondavvuvu.supabase.co';
+const KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjc2xpY2Nwc3dlb25kYXZ2dXZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0MTMwOTQsImV4cCI6MjA4OTk4OTA5NH0.rRfzTLvsw7pw7P_rmhJbta7anBWhT1scd8qWl7ayrbg';
+const H = { 'apikey': KEY, 'Authorization': `Bearer ${KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
+
+let all = [], view = 'all', activeId = null;
+
+const sLabel = { open:'Öppen', progress:'Pågående', closed:'Stängd', escalated:'Eskalerad' };
+const sCls   = { open:'badge-open', progress:'badge-progress', closed:'badge-closed', escalated:'badge-escalated' };
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function initials(n){ return (n||'?').trim().split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2); }
+function ts(){ return new Date().toLocaleString('sv-SE').replace(',',' ').slice(0,16); }
+function nextId(){ if(!all.length)return'INC-001'; return 'INC-'+String(Math.max(...all.map(i=>parseInt(i.id.split('-')[1])||0))+1).padStart(3,'0'); }
+function sync(s){ const d=document.getElementById('sync-dot'); d.className='sync-dot'+(s==='syncing'?' syncing':s==='error'?' error':''); }
+
+async function api(path, method='GET', body){
+  const opts = { method, headers: H };
+  if(body) opts.body = JSON.stringify(body);
+  const r = await fetch(URL_+path, opts);
+  if(!r.ok) throw new Error(await r.text());
+  return r.status===204 ? null : r.json();
+}
+
+async function load(){
+  sync('syncing');
+  try {
+    all = await api('/rest/v1/incidents?order=created_at.desc');
+    render(); stats(); sync('ok');
+  } catch(e){ sync('error'); toast('⚠️','Kunde inte hämta: '+e.message); }
+  finally { document.getElementById('loading').classList.add('gone'); }
+}
+
+function filtered(){
+  if(view==='all') return all;
+  if(view.startsWith('cat-')) return all.filter(i=>i.cat===view.slice(4));
+  return all.filter(i=>i.status===view);
+}
+
+function render(){
+  const rows = filtered();
+  document.getElementById('panel-count').textContent = rows.length+' ärenden';
+  document.getElementById('badge-all').textContent = all.filter(i=>i.status!=='closed').length;
+  const tb = document.getElementById('tbody');
+  if(!rows.length){ tb.innerHTML=`<tr><td colspan="6"><div class="empty-state">◇<br>Inga ärenden</div></td></tr>`; return; }
+  tb.innerHTML = rows.map(i=>`
+    <tr onclick="detail('${i.id}')">
+      <td><div style="display:flex;align-items:center;gap:8px"><span class="sev sev-${i.sev}">S${i.sev}</span><span class="incident-id">${i.id}</span></div></td>
+      <td><div class="incident-title">${esc(i.title)}</div><div class="incident-meta">${esc((i.description||'').slice(0,65))}${(i.description||'').length>65?'…':''}</div></td>
+      <td><span style="font-size:12px;font-family:var(--mono);color:var(--muted)">${i.cat}</span></td>
+      <td><span class="badge ${sCls[i.status]}">${sLabel[i.status]}</span></td>
+      <td>${i.assignee?`<div style="display:flex;align-items:center;gap:7px"><span class="avatar">${esc(initials(i.assignee))}</span><span style="font-size:12.5px">${esc(i.assignee)}</span></div>`:'<span style="color:var(--muted)">—</span>'}</td>
+      <td><span style="font-family:var(--mono);font-size:11.5px;color:var(--muted)">${(i.created_at||'').slice(0,10)}</span></td>
+    </tr>`).join('');
+}
+
+function stats(){
+  document.getElementById('s-active').textContent = all.filter(i=>i.status==='open'||i.status==='progress').length;
+  document.getElementById('s-esc').textContent = all.filter(i=>i.status==='escalated').length;
+  document.getElementById('s-closed').textContent = all.filter(i=>i.status==='closed').length;
+  document.getElementById('s-total').textContent = all.length;
+}
+
+function setView(v, btn){ view=v; document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); render(); }
+
+function openNew(){
+  document.getElementById('n-followup').value = new Date().toISOString().split('T')[0];
+  document.getElementById('modal-new').classList.add('show');
+}
+
+async function createIncident(){
+  const title=(document.getElementById('n-title').value||'').trim();
+  const author=(document.getElementById('n-author').value||'').trim()||'Okänd';
+  if(!title){ toast('⚠️','Ange en rubrik'); return; }
+  const btn=document.getElementById('btn-create');
+  btn.disabled=true; btn.textContent='Sparar...';
+  const at=(document.getElementById('n-action').value||'').trim();
+  const fu=document.getElementById('n-followup').value;
+  const now=ts();
+  const inc={
+    id: nextId(), sev:+document.getElementById('n-sev').value,
+    title, cat:document.getElementById('n-cat').value, status:'open',
+    description:(document.getElementById('n-desc').value||'').trim(),
+    assignee:(document.getElementById('n-assignee').value||'').trim(),
+    created_at:now, followup_date:fu||null,
+    actions: at?[{text:at,done:false,due:fu}]:[],
+    timeline:[{icon:'✦',text:`Ärende skapades av ${author}`,time:now}]
+  };
+  try {
+    const saved = await api('/rest/v1/incidents','POST',inc);
+    all.unshift(saved?.[0]||inc);
+    render(); stats(); close_('modal-new');
+    ['n-title','n-desc','n-action','n-assignee','n-author'].forEach(id=>document.getElementById(id).value='');
+    toast('✓',`${inc.id} skapades`);
+  } catch(e){ toast('⚠️','Fel: '+e.message); }
+  finally { btn.disabled=false; btn.textContent='Skapa ärende'; }
+}
+
+function detail(id){
+  const i=all.find(x=>x.id===id); if(!i) return;
+  activeId=id;
+  document.getElementById('d-title').textContent=i.title;
+  document.getElementById('d-meta').textContent=`${i.id} · ${i.cat} · ${i.created_at}`;
+  const acts=i.actions||[], tl=i.timeline||[];
+  document.getElementById('d-body').innerHTML=`
+    <div class="detail-grid">
+      <div><div class="dil">Status</div><div><span class="badge ${sCls[i.status]}">${sLabel[i.status]}</span></div></div>
+      <div><div class="dil">Allvarlighet</div><div><span class="sev sev-${i.sev}">S${i.sev}</span></div></div>
+      <div><div class="dil">Ansvarig</div><div class="div">${esc(i.assignee)||'—'}</div></div>
+      <div><div class="dil">Kategori</div><div class="div">${i.cat}</div></div>
+      <div><div class="dil">Uppföljning</div><div class="div">${i.followup_date||'—'}</div></div>
+      <div><div class="dil">Skapad</div><div class="div">${i.created_at}</div></div>
+    </div>
+    <div class="detail-section"><div class="section-label">Beskrivning</div>
+      <p style="font-size:13.5px;line-height:1.6">${esc(i.description)}</p>
+    </div>
+    <div class="detail-section"><div class="section-label">Åtgärdspunkter</div>
+      <div id="acts-list" style="display:flex;flex-direction:column;gap:8px">
+        ${acts.map((a,idx)=>`<div class="action-item">
+          <input type="checkbox" class="action-check" ${a.done?'checked':''} onchange="toggleAct(${idx},this.checked)">
+          <div style="flex:1"><div style="${a.done?'text-decoration:line-through;color:var(--muted)':''}">
+            ${esc(a.text)}</div>${a.due?`<div class="action-due">↻ ${a.due}</div>`:''}</div>
+        </div>`).join('')}
+      </div>
+      <div class="add-row">
+        <input id="new-act-txt" placeholder="Lägg till åtgärdspunkt..."/>
+        <button class="btn btn-ghost" onclick="addAct()">+ Lägg till</button>
+      </div>
+    </div>
+    <div class="detail-section"><div class="section-label">Händelselogg</div>
+      <div class="timeline">
+        ${tl.map(t=>`<div class="tl-item"><div class="tl-dot">${t.icon}</div>
+          <div><div class="tl-text">${esc(t.text)}</div><div class="tl-time">${t.time}</div></div></div>`).join('')}
+      </div>
+    </div>
+    ${i.status!=='closed'?`
+    <div class="form-actions">
+      <input id="del-name" placeholder="Delegera till..." style="max-width:170px;padding:7px 10px"/>
+      <button class="btn btn-ghost" onclick="delegate()">↗ Delegera</button>
+      ${i.status!=='escalated'?`<button class="btn btn-danger" onclick="escalate()">▲ Eskalera</button>`:''}
+      <button class="btn btn-success" onclick="closeInc()">● Stäng</button>
+    </div>`:`<div style="text-align:center;font-size:12px;color:var(--muted);padding:6px">Ärendet är stängt</div>`}
+  `;
+  document.getElementById('modal-detail').classList.add('show');
+}
+
+async function patch(id, data, entry){
+  const i=all.find(x=>x.id===id); if(!i) return;
+  Object.assign(i,data);
+  if(entry) i.timeline=[...(i.timeline||[]),entry];
+  sync('syncing');
+  try { await api(`/rest/v1/incidents?id=eq.${encodeURIComponent(id)}`,'PATCH',{...data,timeline:i.timeline}); sync('ok'); }
+  catch(e){ sync('error'); toast('⚠️','Synk fel'); }
+  render(); stats();
+}
+
+async function toggleAct(idx,done){
+  const i=all.find(x=>x.id===activeId); if(!i) return;
+  i.actions[idx].done=done;
+  await patch(activeId,{actions:i.actions},null);
+  toast('✓',done?'Klar':'Avmarkerad');
+}
+
+async function addAct(){
+  const txt=(document.getElementById('new-act-txt').value||'').trim(); if(!txt) return;
+  const i=all.find(x=>x.id===activeId); if(!i) return;
+  i.actions=[...(i.actions||[]),{text:txt,done:false,due:null}];
+  await patch(activeId,{actions:i.actions},null);
+  close_('modal-detail'); detail(activeId);
+  toast('✓','Åtgärdspunkt tillagd');
+}
+
+async function escalate(){
+  await patch(activeId,{status:'escalated',sev:1},{icon:'⚑',text:'Eskalerades till S1',time:ts()});
+  close_('modal-detail'); toast('⚑',`${activeId} eskalerat`);
+}
+
+async function closeInc(){
+  await patch(activeId,{status:'closed'},{icon:'●',text:'Ärende stängt',time:ts()});
+  close_('modal-detail'); toast('●',`${activeId} stängt`);
+}
+
+async function delegate(){
+  const name=(document.getElementById('del-name').value||'').trim(); if(!name){ toast('⚠️','Ange ett namn'); return; }
+  await patch(activeId,{assignee:name,status:'progress'},{icon:'↗',text:`Delegerades till ${name}`,time:ts()});
+  close_('modal-detail'); toast('↗',`Delegerat till ${name}`);
+}
+
+function close_(id){ document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{ if(e.target===o) o.classList.remove('show'); }));
+function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); }
+
+function toast(icon,msg){
+  const t=document.getElementById('toast');
+  document.getElementById('t-icon').textContent=icon;
+  document.getElementById('t-msg').textContent=msg;
+  t.classList.add('show'); clearTimeout(t._t);
+  t._t=setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+setInterval(load,30000);
+load();
+</script>
+</body>
+</html>
